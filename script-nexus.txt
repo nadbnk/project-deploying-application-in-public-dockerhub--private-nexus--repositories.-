@@ -1,0 +1,32 @@
+node {
+    def mavenHome = tool name: "maven"
+	def buildNumber = BUILD_NUMBER
+    stage ('CheckOutCode'){
+    git credentialsId: 'e0cc5b12-cb8c-478f-b051-b0fb5e189d89', url: 'https://github.com/nadbnk/java-web-app-docker.git'
+	}
+    stage ('Build'){
+    sh "${mavenHome}/bin/mvn clean package"
+    }
+    stage ('BuildImage'){
+    sh "docker build -t 172.31.36.105:8083/java-web-application:${buildNumber} ."
+    }
+    stage ('Docker Push'){
+	withCredentials([string(credentialsId: 'Private_Repo_Pass', variable: 'Private_Repo_Pass')]) {
+    sh "docker login -u admin -p ${Private_Repo_Pass} 172.31.36.105:8083"
+	sh "docker push 172.31.36.105:8083/java-web-application:${buildNumber}"
+	}
+	}
+	stage ('Removing Image locally'){
+	sh "docker rmi -f 172.31.36.105:8083/java-web-app:${buildNumber}"
+	}
+	stage ('Delopying in docker cluster'){
+    sshagent(['Docker-Credentials']) {    
+    withCredentials([string(credentialsId: 'Private_Repo_Pass', variable: 'Private_Repo_Pass')]) {
+    sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.6.81 docker login -u admin -p ${Private_Repo_Pass} 172.31.36.105:8083"
+	}
+    sh "ssh -o StrictHostKeyChecking=no ubuntu@172.31.6.81 docker service rm javawebapp || true"
+	sh "ssh ubuntu@172.31.6.81 docker service create --name javawebapp --with-registry-auth -p 8080:8080 --replicas 2 172.31.36.105:8083/java-web-application:${buildNumber}"
+    }
+	}
+    }
+    
